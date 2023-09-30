@@ -194,6 +194,7 @@ def update(frame):
     ax.set_xlim(-50, 50)
     ax.set_ylim(-10, 100)
     ax.set_aspect('equal')
+    plt.gca().invert_xaxis()
 
     if collision_predicted:
         print("Collision Predicted!!!")
@@ -263,6 +264,7 @@ def draw_object(position, draw_dimensions, edge_color, face_color='none'):
 
 
 def is_overlapping(obj1_pos, obj1_dimensions, obj2_pos, obj2_dimensions):
+    """checks if two objects with given positions and sizes overlap"""
     left_1 = obj1_pos[1] - obj1_dimensions[1] / 2
     right_1 = obj1_pos[1] + obj1_dimensions[1] / 2
     top_1 = obj1_pos[0] + obj1_dimensions[0] / 2
@@ -277,45 +279,33 @@ def is_overlapping(obj1_pos, obj1_dimensions, obj2_pos, obj2_dimensions):
             bottom_1 < top_2 and top_1 > bottom_2)
 
 
-def check_collision(car, detectedObject):
-    car_x, car_y = car.pos
-    object_x, object_y = detectedObject.pos
-    car_width, car_height = CAR_DIMENSIONS
-    object_width, object_height = OBJ_DIMENSIONS
-
-    # Putting boundaries to avoid the zero values
-    if car_x < 1 or car_y < 1 or object_x < 1 or object_y < 1:
-        return False
-    if (car_x + car_width / 2 < object_x - object_width / 2 or
-            car_x - car_width / 2 > object_x + object_width / 2 or
-            car_y + car_height / 2 < object_y - object_height / 2 or
-            car_y - car_height / 2 > object_y + object_height / 2):
-        return False
-
-    return True
-
-
 def on_close(event):
     sys.exit(0)
 
 
 if __name__ == "__main__":
+    # initialize file reading
     df = pd.read_csv('data.csv')
     line_count = df.shape[0]
 
+    # initialize first timestamp
     previous_timestamp = df['Timestamp'].iloc[0]
 
+    # initialize the car and the objects tracked by it
     car = Car('black', "green", 'red')
     detected_objects = [
         DetectedObject("FirstObject", car, "green", "green", "green"),
-        DetectedObject("SecondObject", car, "yellow", "yellow", "yellow"),
+        DetectedObject("SecondObject", car, "purple", "purple", "purple"),
         DetectedObject("ThirdObject", car, "blue", "blue", "blue"),
         DetectedObject("FourthObject", car, "magenta", "magenta", "magenta")
     ]
 
+    # list of possible scenarios the system detects
     possible_scenarios = ["CPNCO", "CPTA", "CPLA"]
+
     adjacent_cars = [Car('blue', 'blue'), Car('blue', 'blue')]
 
+    # initialize the visualization plot
     fig, ax = plt.subplots(figsize=(10, 10))
     ani = FuncAnimation(fig, update, frames=line_count, interval=2)
 
