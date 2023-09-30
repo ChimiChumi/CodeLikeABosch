@@ -122,6 +122,10 @@ def update(frame):
 
     collision_detected = False
 
+    cpnco_detected = False
+    cpta_detected = False
+    cpla_detected = False
+
     for detectedObject in detected_objects:
         detectedObject.update(frame)
         detectedObject.draw()
@@ -130,6 +134,16 @@ def update(frame):
 
         if check_collision(car, detectedObject):
             collision_detected = True
+            if check_cpnco(car, detectedObject, adjacent_cars):
+                cpnco_detected = True
+
+                # Check for CPTA
+            if check_cpta(car, detectedObject):
+                cpta_detected = True
+
+                # Check for CPLA
+            if check_cpla(car, detectedObject):
+                cpla_detected = True
             break
 
     ax.set_xlim(-50, 50)
@@ -138,7 +152,56 @@ def update(frame):
 
     if collision_detected:
         print("Collision Detected!!!")
+        if cpnco_detected:
+            print("CPNCO - Car to Pedestrian Nearside Child Obstructed Detected!")
+
+        if cpta_detected:
+            print("CPTA - Car to Pedestrian Turn Adult Detected!")
+
+        if cpla_detected:
+            print("CPLA - Car to Pedestrian Longitudinal Adult Detected!")
+        plt.pause(20000)
         plt.close()
+
+
+def check_cpnco(car, pedestrian, adjacent_cars):
+    # Check if the car is moving in a straight line (you can adjust the threshold)
+    if abs(car.yaw_rate) < 10:
+        # Check if there are adjacent parallel cars in the last 5 meters (you can adjust the distance)
+        for adjacent_car in adjacent_cars:
+            if abs(car.pos[1] - adjacent_car.pos[1]) < 5:
+                # Check if the pedestrian is crossing in front of the car and is obstructed
+                if (car.pos[0] - (car.draw_dimensions[0] / 2)
+                        < pedestrian.pos[0] < car.pos[0] + (car.draw_dimensions[0] / 2) and
+                        abs(pedestrian.pos[1] - car.pos[1]) < car.draw_dimensions[1] / 2):
+                    # Check if the pedestrian's movement is perpendicular to the car's movement
+                    car_direction_vector = (1, 0)  # Assuming the car moves in the x-direction
+                    pedestrian_vector = (pedestrian.pos[0] - car.pos[0], pedestrian.pos[1] - car.pos[1])
+                    dot_product = car_direction_vector[0] * pedestrian_vector[0] + \
+                                  car_direction_vector[1] * pedestrian_vector[1]
+                    if abs(dot_product) < 1e-3:  # Check if the dot product is close to zero
+                        return True
+    return False
+
+
+def check_cpta(car, pedestrian):
+    # Check if the car's yaw rate changes significantly over a long timestamp (you can adjust the thresholds)
+    if abs(car.yaw_rate) > 8 and car.speed > 4:
+        # Check if the pedestrian appears in front of the car and is perpendicular to its movement
+        if (car.pos[0] - (car.draw_dimensions[0] / 2)
+                < pedestrian.pos[0] < car.pos[0] + (car.draw_dimensions[0] / 2) and
+                abs(pedestrian.pos[1] - car.pos[1]) < car.draw_dimensions[1] / 2):
+            return True
+    return False
+
+
+def check_cpla(car, pedestrian):
+    # Check if the car and pedestrian are moving roughly in the same direction
+    if abs(car.yaw_rate) < 10 and car.speed > 5:
+        # Check if the car and pedestrian positions overlap or are very close (adjust threshold)
+        if abs(car.pos[1] - pedestrian.pos[1]) < car.draw_dimensions[1] / 2:
+            return True
+    return False
 
 
 def draw_object(position, draw_dimensions, edge_color, face_color='none'):
@@ -183,6 +246,9 @@ if __name__ == "__main__":
         DetectedObject("ThirdObject", car, "blue", "blue"),
         DetectedObject("FourthObject", car, "magenta", "magenta")
     ]
+
+    possible_scenarios = ["CPNCO", "CPTA", "CPLA"]
+    adjacent_cars = [Car('blue', 'blue'), Car('blue', 'blue')]
 
     fig, ax = plt.subplots(figsize=(10, 10))
     ani = FuncAnimation(fig, update, frames=line_count, interval=2)
