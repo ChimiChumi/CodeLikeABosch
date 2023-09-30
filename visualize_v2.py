@@ -57,15 +57,30 @@ def update(frame):
     obj4_pos = (car_pos[0] + obj4_relative_pos[0], car_pos[1] + obj4_relative_pos[1])
     draw_object(obj4_pos, "m")
 
+    global obj1_prev_pos, obj2_prev_pos, obj3_prev_pos, obj4_prev_pos
+
+    predict_future_positions(obj1_pos, obj1_prev_pos)
+    obj1_prev_pos = obj1_pos
+
+    predict_future_positions(obj2_pos, obj2_prev_pos)
+    obj2_prev_pos = obj2_pos
+
+    predict_future_positions(obj3_pos, obj3_prev_pos)
+    obj3_prev_pos = obj3_pos
+
+    predict_future_positions(obj4_pos, obj4_prev_pos)
+    obj4_prev_pos = obj4_pos
+
+
     ax.set_xlim(-50, 50)
     ax.set_ylim(-10, 100)
     ax.set_aspect('equal')
 
 
-def predict_future_positions(pos, prev_pos, predict_count=10):
+def predict_future_positions(pos, prev_pos, predict_count = 15, step_size = 5):
     pos_delta = (pos[0] - prev_pos[0], pos[1] - prev_pos[1])
     for i in range(predict_count):
-        pos_predicted = (pos[0] + pos_delta[0] * i, pos[1] + pos_delta[1] * i)
+        pos_predicted = (pos[0] + pos_delta[0] * i * step_size, pos[1] + pos_delta[1] * i * step_size)
         draw_object(pos_predicted, "b")
 
 
@@ -88,6 +103,10 @@ previous_timestamp = df['Timestamp'].iloc[0]
 previous_car_pos = (0, 0)
 obj1_prev_pos = (df["FirstObjectDistance_X"].iloc[0] / 128,
                  df["FirstObjectDistance_Y"].iloc[0] / 128)
+obj2_prev_pos = (df["SecondObjectDistance_X"].iloc[0] / 128, df["SecondObjectDistance_Y"].iloc[0] / 128)
+obj3_prev_pos = (df["ThirdObjectDistance_X"].iloc[0] / 128, df["ThirdObjectDistance_Y"].iloc[0] / 128)
+obj4_prev_pos = (df["FourthObjectDistance_X"].iloc[0] / 128, df["FourthObjectDistance_Y"].iloc[0] / 128)
+
 
 fig, ax = plt.subplots(figsize=(10, 10))
 ani = FuncAnimation(fig, update, frames=lineCount, interval=2)
