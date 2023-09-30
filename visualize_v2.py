@@ -7,7 +7,6 @@ import pandas as pd
 import numpy as np
 from matplotlib.animation import FuncAnimation
 from scipy import stats
-from sklearn.impute import KNNImputer
 
 CAR_DIMENSIONS = (5, 5)
 OBJ_DIMENSIONS = (5, 5)
@@ -35,15 +34,17 @@ def fill_zeros(df, column):
                 # Adjust the stop argument to align with the increment
                 interpolated_values = [df.loc[prev_idx, column] + increment * i for i in range(1, next_idx - prev_idx)]
                 # Replace the zero values
-                df.loc[idx:next_idx-1, column] = interpolated_values
+                df.loc[idx:next_idx - 1, column] = interpolated_values
     return df
+
 
 # Read your data
 df = pd.read_csv('data.csv')
 
 # Fill zeros for each column that you want to process
-columns_to_fill = ['FirstObjectDistance_X', 'FirstObjectDistance_Y', 'SecondObjectDistance_X', 'SecondObjectDistance_Y', 'ThirdObjectDistance_X', 'ThirdObjectDistance_Y', 'FourthObjectDistance_X', 
-'FourthObjectDistance_Y']
+columns_to_fill = ['FirstObjectDistance_X', 'FirstObjectDistance_Y', 'SecondObjectDistance_X', 'SecondObjectDistance_Y',
+                   'ThirdObjectDistance_X', 'ThirdObjectDistance_Y', 'FourthObjectDistance_X',
+                   'FourthObjectDistance_Y']
 for column in columns_to_fill:
     # df = fill_zeros(df, column)
     z_scores = np.abs(stats.zscore(df[column]))
@@ -55,7 +56,6 @@ for column in columns_to_fill:
     # # Apply the imputer
     # df[column] = imputer.fit_transform(df[column].values.reshape(-1, 1))
     data = df[column]
-    print('data',data)
     # Identify zero values
     mask = data[1] == 0
 
@@ -66,14 +66,45 @@ for column in columns_to_fill:
     # Update the DataFrame
     df.update(data)
 
-class DetectedObject:
-    def __init__(self, column_name, car_object, edge_color, face_color='none'):
-        self.column_name = column_name  # ex.: "ThirdObject"
-        self.car_object = car_object
-        self.pos_history = []
+
+class CommonObject:
+    def __init__(self, edge_color, face_color='none'):
         self.edge_color = edge_color  # ex.: "g", "black"
         self.face_color = face_color  # ex.: "g", "black"
         self.pos = (0, 0)
+        self.pos_history = []
+        self.draw_dimensions = OBJ_DIMENSIONS
+        self.predicted_pos_list = []
+
+    def draw(self):
+        draw_object(self.pos, self.draw_dimensions, self.edge_color, self.face_color)
+
+    def predict(self, predict_count, step_size, history_to_avg):
+        avg_pos_delta = (0, 0)
+        if len(self.pos_history) > 2:
+            pos_deltas = []
+            for i in range(min(history_to_avg, len(self.pos_history) - 1)):
+                pos_deltas.append([self.pos_history[-1 - i][0] - self.pos_history[-2 - i][0],
+                                   self.pos_history[-1 - i][1] - self.pos_history[-2 - i][1]])
+            avg_x = sum(x for x, y in pos_deltas) / len(pos_deltas)
+            avg_y = sum(y for x, y in pos_deltas) / len(pos_deltas)
+            avg_pos_delta = (avg_x, avg_y)
+        self.predicted_pos_list.clear()
+        for i in range(predict_count):
+            pos_predicted = (self.pos[0] + avg_pos_delta[0] * i * step_size,
+                             self.pos[1] + avg_pos_delta[1] * i * step_size)
+            self.predicted_pos_list.append(pos_predicted)
+
+    def draw_predicted(self, edge_color="b"):
+        for pos_predicted in self.predicted_pos_list:
+            draw_object(pos_predicted, self.draw_dimensions, edge_color)
+
+
+class DetectedObject(CommonObject):
+    def __init__(self, column_name, car_object, edge_color, face_color='none'):
+        super().__init__(edge_color, face_color)
+        self.column_name = column_name  # ex.: "ThirdObject"
+        self.car_object = car_object
         self.draw_dimensions = OBJ_DIMENSIONS
 
     def update(self, frame):
@@ -85,21 +116,13 @@ class DetectedObject:
             self.pos_history.clear()
         self.pos_history.append(self.pos)
 
-    def draw(self):
-        draw_object(self.pos, self.draw_dimensions, self.edge_color, self.face_color)
 
-    def predict(self, predict_count, step_size, history_to_avg):
-        predict_future_positions(self.pos, self.pos_history, history_to_avg, predict_count, step_size)
-
-
-class Car:
+class Car(CommonObject):
     def __init__(self, edge_color, face_color='none'):
-        self.edge_color = edge_color  # ex.: "g", "black"
-        self.face_color = face_color  # ex.: "g", "black"
+        super().__init__(edge_color, face_color)
         self.speed = 0
         self.yaw_rate = 0
         self.pos_history = [(0, 0)]
-        self.pos = (0, 0)
         self.draw_dimensions = CAR_DIMENSIONS
 
     def update(self, frame, delta_time):
@@ -117,12 +140,6 @@ class Car:
             self.pos = (self.pos_history[-1][0] + delta_x, self.pos_history[-1][1] + delta_y)
         self.pos_history.append(self.pos)
 
-    def draw(self):
-        draw_object(self.pos, self.draw_dimensions, self.edge_color, self.face_color)
-
-    def predict(self, predict_count, step_size, history_to_avg):
-        predict_future_positions(self.pos, self.pos_history, history_to_avg, predict_count, step_size)
-
 
 def update(frame):
     ax.clear()
@@ -135,30 +152,17 @@ def update(frame):
     car.update(frame, delta_time)
     car.draw()
     car.predict(5, 5, 5)
+    car.draw_predicted()
 
     for detectedObject in detectedObjects:
         detectedObject.update(frame)
         detectedObject.draw()
         detectedObject.predict(5, 5, 5)
+        detectedObject.draw_predicted()
 
     ax.set_xlim(-50, 50)
     ax.set_ylim(-10, 100)
     ax.set_aspect('equal')
-
-
-def predict_future_positions(pos, pos_history, history_to_avg, predict_count, step_size):
-    avg_pos_delta = (0, 0)
-    if len(pos_history) > 2:
-        pos_deltas = []
-        for i in range(min(history_to_avg, len(pos_history)-1)):
-            pos_deltas.append([pos_history[-1-i][0] - pos_history[-2-i][0],
-                              pos_history[-1-i][1] - pos_history[-2-i][1]])
-        avg_x = sum(x for x, y in pos_deltas) / len(pos_deltas)
-        avg_y = sum(y for x, y in pos_deltas) / len(pos_deltas)
-        avg_pos_delta = (avg_x, avg_y)
-    for i in range(predict_count):
-        pos_predicted = (pos[0] + avg_pos_delta[0] * i * step_size, pos[1] + avg_pos_delta[1] * i * step_size)
-        draw_object(pos_predicted, OBJ_DIMENSIONS, "b")
 
 
 def draw_object(position, draw_dimensions, edge_color, face_color='none'):
