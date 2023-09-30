@@ -5,50 +5,43 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.animation import FuncAnimation
 
-CAR_DIMENSIONS = (5, 5)
-OBJ_DIMENSIONS = (5, 5)
-ACCEPTABLE_DIFFERENCE_FROM_PREDICTION = 5
-
-
-def fill_zeros(df, column):
-    zero_indices = df[df[column] == 0].index
-    for idx in zero_indices:
-        if idx == 0 or idx == len(df) - 1:
-            continue
-        else:
-            prev_idx = idx - 1
-            next_idx = idx + 1
-            while df.loc[next_idx, column] == 0:
-                next_idx += 1
-                if next_idx >= len(df):
-                    break
-            if next_idx >= len(df):
-                continue
-            else:
-                diff = df.loc[next_idx, column] - df.loc[prev_idx, column]
-                increment = diff / (next_idx - prev_idx)
-                interpolated_values = [df.loc[prev_idx, column] + increment * i for i in range(1, next_idx - prev_idx)]
-                df.loc[idx:next_idx - 1, column] = interpolated_values
-    return df
+CAR_DIMENSIONS = (5, 5)  # size of the car model
+OBJ_DIMENSIONS = (3, 3)  # size of the tracked object model
+ACCEPTABLE_DIFFERENCE_FROM_PREDICTION = 5  # threshold for noisy object tracking
 
 
 class CommonObject:
+    """Common base class for the car and tracked objects"""
     def __init__(self, edge_color, prediction_color="blue", face_color='none'):
+        # visualization colors
         self.edge_color = edge_color
         self.face_color = face_color
         self.prediction_color = prediction_color
-        self.pos = (0, 0)
-        self.pos_history = []
+
+        # size of the object
         self.draw_dimensions = OBJ_DIMENSIONS
+
+        # current position
+        self.pos = (0, 0)
+
+        # list of previously visited positions
+        self.pos_history = []
+
+        # list of predicted future positions
         self.predicted_pos_list = []
+
+        # ignored object are not displayed and not checked for collisions
+        # objects are ignored if they make impossible movements (detection noise)
         self.ignore_object = False
 
     def draw(self):
+        """displays the object in its current position"""
         if self.ignore_object:
             return
         draw_object(self.pos, self.draw_dimensions, self.edge_color, self.face_color)
 
     def predict(self, predict_count, step_size, history_to_avg):
+        """predicts the next positions of the object based on the average of previous position changes"""
         avg_pos_delta = (0, 0)
         if len(self.pos_history) > 2:
             pos_deltas = []
@@ -65,6 +58,7 @@ class CommonObject:
             self.predicted_pos_list.append(pos_predicted)
 
     def draw_predicted(self):
+        """displays the predicted future positions of the object"""
         if self.ignore_object:
             return
         for pos_predicted in self.predicted_pos_list:
@@ -72,13 +66,23 @@ class CommonObject:
 
 
 class DetectedObject(CommonObject):
+    """represents an object tracked by the car"""
     def __init__(self, column_name, car_object, edge_color, prediction_color="blue", face_color='none'):
         super().__init__(edge_color, prediction_color, face_color)
+
+        # name of the object on the .csv file (ex.:"FirstObject")
         self.column_name = column_name
+
+        # reference to the car that is tracking this object
         self.car_object = car_object
+
+        # size of the object
         self.draw_dimensions = OBJ_DIMENSIONS
 
     def update(self, frame):
+        """reads the position of the object from the CSV
+        updates its position history
+        checks if the object should be ignored or not"""
         relative_pos = (df[self.column_name + "Distance_X"].iloc[frame] / 128,
                         df[self.column_name + "Distance_Y"].iloc[frame] / 128)
         self.pos = (self.car_object.pos[0] + relative_pos[0],
@@ -89,10 +93,15 @@ class DetectedObject(CommonObject):
         self.__update_ignored_status()
 
     def __update_ignored_status(self):
+        """checks of the object should be ignored"""
+        # object is ignored if there are big changes in its movement
         is_far_from_predicted = False
         if len(self.predicted_pos_list) > 0:
-            is_far_from_predicted = (abs(self.pos[0] - self.predicted_pos_list[0][0]) > ACCEPTABLE_DIFFERENCE_FROM_PREDICTION
-                                     or abs(self.pos[1] - self.predicted_pos_list[0][1]) > ACCEPTABLE_DIFFERENCE_FROM_PREDICTION)
+            is_far_from_predicted = (
+                        abs(self.pos[0] - self.predicted_pos_list[0][0]) > ACCEPTABLE_DIFFERENCE_FROM_PREDICTION
+                        or abs(self.pos[1] - self.predicted_pos_list[0][1]) > ACCEPTABLE_DIFFERENCE_FROM_PREDICTION)
+
+        # object is ignored if it is "inside" the car (ex.: the 0 values in the CSV)
         is_too_close_to_car = (abs(self.pos[0] - self.car_object.pos[0]) < car.draw_dimensions[0] / 2
                                and abs(self.pos[1] - self.car_object.pos[1]) < car.draw_dimensions[1] / 2)
 
@@ -103,6 +112,7 @@ class DetectedObject(CommonObject):
 
 
 class Car(CommonObject):
+    """Represents the car"""
     def __init__(self, edge_color, prediction_color, face_color='none'):
         super().__init__(edge_color, prediction_color, face_color)
         self.speed = 0
@@ -111,6 +121,8 @@ class Car(CommonObject):
         self.draw_dimensions = CAR_DIMENSIONS
 
     def update(self, frame, delta_time):
+        """calculates the position from the values in the CSV
+        updates its position history"""
         self.speed = df["VehicleSpeed"].iloc[frame] / 256
         self.yaw_rate = df["YawRate"].iloc[frame] * (180 / math.pi)
 
@@ -127,6 +139,9 @@ class Car(CommonObject):
 
 
 def update(frame):
+    """function that runs for every row in the CSV
+    updates the system"""
+
     ax.clear()
 
     global previous_timestamp
@@ -151,6 +166,7 @@ def update(frame):
 
     collision_predicted = False
     collision_object = None
+    predicted_collision_index = 0
     for i in range(len(car.predicted_pos_list)):
         for detectedObject in detected_objects:
             if detectedObject.ignore_object:
@@ -159,20 +175,21 @@ def update(frame):
                               detectedObject.predicted_pos_list[i], detectedObject.draw_dimensions):
                 collision_predicted = True
                 collision_object = detectedObject
+                predicted_collision_index = i
     if collision_predicted:
         car.prediction_color = "red"
     else:
         car.prediction_color = "green"
     if collision_predicted:
-        if check_cpnco(car, collision_object, adjacent_cars):
+        if check_cpnco(car, collision_object, adjacent_cars, predicted_collision_index):
             cpnco_detected = True
 
             # Check for CPTA
-        if check_cpta(car, collision_object):
+        if check_cpta(car, collision_object, predicted_collision_index):
             cpta_detected = True
 
             # Check for CPLA
-        if check_cpla(car, collision_object):
+        if check_cpla(car, collision_object, predicted_collision_index):
             cpla_detected = True
 
     ax.set_xlim(-50, 50)
@@ -193,42 +210,41 @@ def update(frame):
         plt.close()
 
 
-def check_cpnco(car, pedestrian, adjacent_cars):
-    # Check if the car is moving in a straight line (you can adjust the threshold)
+def check_cpnco(car, pedestrian, adjacent_cars, predicted_collision_index):
     if abs(car.yaw_rate) < 2:
-        # Check if there are adjacent parallel cars in the last 5 meters (you can adjust the distance)
         for adjacent_car in adjacent_cars:
-            if abs(car.pos[1] - adjacent_car.pos[1]) < 5:
-                # Check if the pedestrian is crossing in front of the car and is obstructed
-                if (car.pos[0] - (car.draw_dimensions[0] / 2)
-                        < pedestrian.pos[0] < car.pos[0] + (car.draw_dimensions[0] / 2) and
-                        abs(pedestrian.pos[1] - car.pos[1]) < car.draw_dimensions[1] / 2):
+            if abs(car.predicted_pos_list[predicted_collision_index][1] - adjacent_car.pos[1]) < 5:
+                if (is_overlapping(car.predicted_pos_list[predicted_collision_index],
+                                   car.draw_dimensions,
+                                   pedestrian.predicted_pos_list[predicted_collision_index],
+                                   pedestrian.draw_dimensions)):
                     # Check if the pedestrian's movement is perpendicular to the car's movement
-                    car_direction_vector = (1, 0)  # Assuming the car moves in the x-direction
-                    pedestrian_vector = (pedestrian.pos[0] - car.pos[0], pedestrian.pos[1] - car.pos[1])
-                    dot_product = car_direction_vector[0] * pedestrian_vector[0] + \
-                                  car_direction_vector[1] * pedestrian_vector[1]
+                    car_direction_vector = (car.predicted_pos_list[0][0] - car.pos[0],
+                                            car.predicted_pos_list[0][1] - car.pos[1])
+                    pedestrian_vector = (pedestrian.pos[0] - car.predicted_pos_list[predicted_collision_index][0],
+                                         pedestrian.pos[1] - car.predicted_pos_list[predicted_collision_index][1],)
+                    dot_product = car_direction_vector[0] * pedestrian_vector[0] + car_direction_vector[1] * pedestrian_vector[1]
                     if abs(dot_product) < 1e-3:  # Check if the dot product is close to zero
                         return True
     return False
 
 
-def check_cpta(car, pedestrian):
-    # Check if the car's yaw rate changes significantly over a long timestamp (you can adjust the thresholds)
+def check_cpta(car, pedestrian, predicted_collision_index):
     if abs(car.yaw_rate) > 8 and car.speed > 4:
-        # Check if the pedestrian appears in front of the car and is perpendicular to its movement
-        if (car.pos[0] - (car.draw_dimensions[0] / 2)
-                < pedestrian.pos[0] < car.pos[0] + (car.draw_dimensions[0] / 2) and
-                abs(pedestrian.pos[1] - car.pos[1]) < car.draw_dimensions[1] / 2):
+        if is_overlapping(car.predicted_pos_list[predicted_collision_index],
+                          car.draw_dimensions,
+                          pedestrian.predicted_pos_list[predicted_collision_index],
+                          pedestrian.draw_dimensions):
             return True
     return False
 
 
-def check_cpla(car, pedestrian):
-    # Check if the car and pedestrian are moving roughly in the same direction
+def check_cpla(car, pedestrian, predicted_collision_index):
     if abs(car.yaw_rate) < 2 and car.speed > 4:
-        # Check if the car and pedestrian positions overlap or are very close (adjust threshold)
-        if abs(car.pos[1] - pedestrian.pos[1]) < car.draw_dimensions[1] / 2:
+        if is_overlapping(car.predicted_pos_list[predicted_collision_index],
+                          car.draw_dimensions,
+                          pedestrian.predicted_pos_list[predicted_collision_index],
+                          pedestrian.draw_dimensions):
             return True
     return False
 
