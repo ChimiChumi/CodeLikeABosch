@@ -3,12 +3,11 @@ import sys
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import pandas as pd
-import numpy as np
 from matplotlib.animation import FuncAnimation
-from scipy import stats
 
 CAR_DIMENSIONS = (5, 5)
 OBJ_DIMENSIONS = (5, 5)
+ACCEPTABLE_DIFFERENCE_FROM_PREDICTION = 5
 
 
 def fill_zeros(df, column):
@@ -34,15 +33,19 @@ def fill_zeros(df, column):
 
 
 class CommonObject:
-    def __init__(self, edge_color, face_color='none'):
+    def __init__(self, edge_color, prediction_color="blue", face_color='none'):
         self.edge_color = edge_color
         self.face_color = face_color
+        self.prediction_color = prediction_color
         self.pos = (0, 0)
         self.pos_history = []
         self.draw_dimensions = OBJ_DIMENSIONS
         self.predicted_pos_list = []
+        self.ignore_object = False
 
     def draw(self):
+        if self.ignore_object:
+            return
         draw_object(self.pos, self.draw_dimensions, self.edge_color, self.face_color)
 
     def predict(self, predict_count, step_size, history_to_avg):
@@ -56,19 +59,21 @@ class CommonObject:
             avg_y = sum(y for x, y in pos_deltas) / len(pos_deltas)
             avg_pos_delta = (avg_x, avg_y)
         self.predicted_pos_list.clear()
-        for i in range(predict_count):
+        for i in range(1, predict_count + 1):
             pos_predicted = (self.pos[0] + avg_pos_delta[0] * i * step_size,
                              self.pos[1] + avg_pos_delta[1] * i * step_size)
             self.predicted_pos_list.append(pos_predicted)
 
-    def draw_predicted(self, edge_color="b"):
+    def draw_predicted(self):
+        if self.ignore_object:
+            return
         for pos_predicted in self.predicted_pos_list:
-            draw_object(pos_predicted, self.draw_dimensions, edge_color)
+            draw_object(pos_predicted, self.draw_dimensions, self.prediction_color)
 
 
 class DetectedObject(CommonObject):
-    def __init__(self, column_name, car_object, edge_color, face_color='none'):
-        super().__init__(edge_color, face_color)
+    def __init__(self, column_name, car_object, edge_color, prediction_color="blue", face_color='none'):
+        super().__init__(edge_color, prediction_color, face_color)
         self.column_name = column_name
         self.car_object = car_object
         self.draw_dimensions = OBJ_DIMENSIONS
@@ -81,11 +86,25 @@ class DetectedObject(CommonObject):
         if frame == 0:
             self.pos_history.clear()
         self.pos_history.append(self.pos)
+        self.__update_ignored_status()
+
+    def __update_ignored_status(self):
+        is_far_from_predicted = False
+        if len(self.predicted_pos_list) > 0:
+            is_far_from_predicted = (abs(self.pos[0] - self.predicted_pos_list[0][0]) > ACCEPTABLE_DIFFERENCE_FROM_PREDICTION
+                                     or abs(self.pos[1] - self.predicted_pos_list[0][1]) > ACCEPTABLE_DIFFERENCE_FROM_PREDICTION)
+        is_too_close_to_car = (abs(self.pos[0] - self.car_object.pos[0]) < car.draw_dimensions[0] / 2
+                               and abs(self.pos[1] - self.car_object.pos[1]) < car.draw_dimensions[1] / 2)
+
+        if is_too_close_to_car or is_far_from_predicted:
+            self.ignore_object = True
+        else:
+            self.ignore_object = False
 
 
 class Car(CommonObject):
-    def __init__(self, edge_color, face_color='none'):
-        super().__init__(edge_color, face_color)
+    def __init__(self, edge_color, prediction_color, face_color='none'):
+        super().__init__(edge_color, prediction_color, face_color)
         self.speed = 0
         self.yaw_rate = 0
         self.pos_history = [(0, 0)]
@@ -120,8 +139,6 @@ def update(frame):
     car.predict(5, 5, 5)
     car.draw_predicted()
 
-    collision_detected = False
-
     cpnco_detected = False
     cpta_detected = False
     cpla_detected = False
@@ -132,26 +149,38 @@ def update(frame):
         detectedObject.predict(5, 5, 5)
         detectedObject.draw_predicted()
 
-        if check_collision(car, detectedObject):
-            collision_detected = True
-            if check_cpnco(car, detectedObject, adjacent_cars):
-                cpnco_detected = True
+    collision_predicted = False
+    collision_object = None
+    for i in range(len(car.predicted_pos_list)):
+        for detectedObject in detected_objects:
+            if detectedObject.ignore_object:
+                continue
+            if is_overlapping(car.predicted_pos_list[i], car.draw_dimensions,
+                              detectedObject.predicted_pos_list[i], detectedObject.draw_dimensions):
+                collision_predicted = True
+                collision_object = detectedObject
+    if collision_predicted:
+        car.prediction_color = "red"
+    else:
+        car.prediction_color = "green"
+    if collision_predicted:
+        if check_cpnco(car, collision_object, adjacent_cars):
+            cpnco_detected = True
 
-                # Check for CPTA
-            if check_cpta(car, detectedObject):
-                cpta_detected = True
+            # Check for CPTA
+        if check_cpta(car, collision_object):
+            cpta_detected = True
 
-                # Check for CPLA
-            if check_cpla(car, detectedObject):
-                cpla_detected = True
-            break
+            # Check for CPLA
+        if check_cpla(car, collision_object):
+            cpla_detected = True
 
     ax.set_xlim(-50, 50)
     ax.set_ylim(-10, 100)
     ax.set_aspect('equal')
 
-    if collision_detected:
-        print("Collision Detected!!!")
+    if collision_predicted:
+        print("Collision Predicted!!!")
         if cpnco_detected:
             print("CPNCO - Car to Pedestrian Nearside Child Obstructed Detected!")
 
@@ -212,6 +241,21 @@ def draw_object(position, draw_dimensions, edge_color, face_color='none'):
     ax.add_patch(obj_rect)
 
 
+def is_overlapping(obj1_pos, obj1_dimensions, obj2_pos, obj2_dimensions):
+    left_1 = obj1_pos[1] - obj1_dimensions[1] / 2
+    right_1 = obj1_pos[1] + obj1_dimensions[1] / 2
+    top_1 = obj1_pos[0] + obj1_dimensions[0] / 2
+    bottom_1 = obj1_pos[0] - obj1_dimensions[0] / 2
+
+    left_2 = obj2_pos[1] - obj2_dimensions[1] / 2
+    right_2 = obj2_pos[1] + obj2_dimensions[1] / 2
+    top_2 = obj2_pos[0] + obj2_dimensions[0] / 2
+    bottom_2 = obj2_pos[0] - obj2_dimensions[0] / 2
+
+    return (left_1 < right_2 and right_1 > left_2 and
+            bottom_1 < top_2 and top_1 > bottom_2)
+
+
 def check_collision(car, detectedObject):
     car_x, car_y = car.pos
     object_x, object_y = detectedObject.pos
@@ -239,12 +283,12 @@ if __name__ == "__main__":
 
     previous_timestamp = df['Timestamp'].iloc[0]
 
-    car = Car('black', 'red')
+    car = Car('black', "green", 'red')
     detected_objects = [
-        DetectedObject("FirstObject", car, "green", "green"),
-        DetectedObject("SecondObject", car, "yellow", "yellow"),
-        DetectedObject("ThirdObject", car, "blue", "blue"),
-        DetectedObject("FourthObject", car, "magenta", "magenta")
+        DetectedObject("FirstObject", car, "green", "green", "green"),
+        DetectedObject("SecondObject", car, "yellow", "yellow", "yellow"),
+        DetectedObject("ThirdObject", car, "blue", "blue", "blue"),
+        DetectedObject("FourthObject", car, "magenta", "magenta", "magenta")
     ]
 
     possible_scenarios = ["CPNCO", "CPTA", "CPLA"]
