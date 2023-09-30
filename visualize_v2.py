@@ -25,10 +25,12 @@ def update(frame):
     delta_x = car_speed * math.cos(heading_angle) * delta_time
     delta_y = car_speed * math.sin(heading_angle) * delta_time
 
-    global car_pos
+    global previous_car_pos
     if frame == 0:
-        car_pos = (0, 0)
-    car_pos = (car_pos[0] + delta_x, car_pos[1] + delta_y)
+        previous_car_pos = (0, 0)
+    car_pos = (previous_car_pos[0] + delta_x, previous_car_pos[1] + delta_y)
+    predict_future_positions(car_pos, previous_car_pos)
+    previous_car_pos = car_pos
 
     car_rect = patches.Rectangle((car_pos[1] - CAR_DIMENSIONS[1] / 2, car_pos[0] - CAR_DIMENSIONS[0] / 2),
                                  CAR_DIMENSIONS[1], CAR_DIMENSIONS[0],
@@ -60,6 +62,13 @@ def update(frame):
     ax.set_aspect('equal')
 
 
+def predict_future_positions(pos, prev_pos, predict_count=10):
+    pos_delta = (pos[0] - prev_pos[0], pos[1] - prev_pos[1])
+    for i in range(predict_count):
+        pos_predicted = (pos[0] + pos_delta[0] * i, pos[1] + pos_delta[1] * i)
+        draw_object(pos_predicted, "b")
+
+
 def draw_object(position, color):
     obj_rect = patches.Rectangle((position[1] - OBJ_DIMENSIONS[1] / 2,
                                   position[0] - OBJ_DIMENSIONS[0] / 2),
@@ -76,7 +85,9 @@ df = pd.read_csv('data.csv')
 lineCount = df.shape[0]
 previous_timestamp = df['Timestamp'].iloc[0]
 
-car_pos = (0, 0)
+previous_car_pos = (0, 0)
+obj1_prev_pos = (df["FirstObjectDistance_X"].iloc[0] / 128,
+                 df["FirstObjectDistance_Y"].iloc[0] / 128)
 
 fig, ax = plt.subplots(figsize=(10, 10))
 ani = FuncAnimation(fig, update, frames=lineCount, interval=2)
