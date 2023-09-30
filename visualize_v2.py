@@ -166,7 +166,7 @@ def update(frame):
 
 def check_cpnco(car, pedestrian, adjacent_cars):
     # Check if the car is moving in a straight line (you can adjust the threshold)
-    if abs(car.yaw_rate) < 10:
+    if abs(car.yaw_rate) < 2:
         # Check if there are adjacent parallel cars in the last 5 meters (you can adjust the distance)
         for adjacent_car in adjacent_cars:
             if abs(car.pos[1] - adjacent_car.pos[1]) < 5:
@@ -197,7 +197,7 @@ def check_cpta(car, pedestrian):
 
 def check_cpla(car, pedestrian):
     # Check if the car and pedestrian are moving roughly in the same direction
-    if abs(car.yaw_rate) < 10 and car.speed > 5:
+    if abs(car.yaw_rate) < 2 and car.speed > 4:
         # Check if the car and pedestrian positions overlap or are very close (adjust threshold)
         if abs(car.pos[1] - pedestrian.pos[1]) < car.draw_dimensions[1] / 2:
             return True
