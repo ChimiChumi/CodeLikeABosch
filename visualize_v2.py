@@ -13,7 +13,7 @@ CAR_DIMENSIONS = (5, 5)
 OBJ_DIMENSIONS = (5, 5)
 
 
-"""def fill_zeros(df, column):
+def fill_zeros(df, column):
     zero_indices = df[df[column] == 0].index
     for idx in zero_indices:
         if idx == 0 or idx == len(df) - 1:  # If the zero is at the start or end of the column
@@ -48,24 +48,24 @@ for column in columns_to_fill:
     # df = fill_zeros(df, column)
     z_scores = np.abs(stats.zscore(df[column]))
     # # Identify outliers
-    outliers = z_scores > 2
+    outliers = z_scores > 3
     # # Replace outliers with median
     # df[column][outliers] = df[column].median()
     # imputer = KNNImputer(n_neighbors=5)
     # # Apply the imputer
     # df[column] = imputer.fit_transform(df[column].values.reshape(-1, 1))
     data = df[column]
-
+    print('data',data)
     # Identify zero values
-    mask = data[column] == 0
+    mask = data[1] == 0
 
     # Apply the imputer
-    imputer = KNNImputer(n_neighbors=5, missing_values=0)
-    data.loc[mask, column] = imputer.fit_transform(data[column].values.reshape(-1, 1))[mask]
-
+    # imputer = KNNImputer(n_neighbors=5, missing_values=0)
+    # data.loc[mask, column] = imputer.fit_transform(data[column].values.reshape(-1, 1))[mask]
+    df = fill_zeros(df, column)
     # Update the DataFrame
     df.update(data)
-"""
+
 class DetectedObject:
     def __init__(self, column_name, car_object, edge_color, face_color='none'):
         self.column_name = column_name  # ex.: "ThirdObject"
@@ -173,7 +173,6 @@ def on_close(event):
     sys.exit(0)
 
 
-df = pd.read_csv('data.csv')
 lineCount = df.shape[0]
 previous_timestamp = df['Timestamp'].iloc[0]
 
