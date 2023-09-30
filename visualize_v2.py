@@ -1,6 +1,5 @@
 import math
-import sys  # Import the sys module to handle keyboard interrupts
-
+import sys
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -15,62 +14,29 @@ OBJ_DIMENSIONS = (5, 5)
 def fill_zeros(df, column):
     zero_indices = df[df[column] == 0].index
     for idx in zero_indices:
-        if idx == 0 or idx == len(df) - 1:  # If the zero is at the start or end of the column
+        if idx == 0 or idx == len(df) - 1:
             continue
         else:
             prev_idx = idx - 1
             next_idx = idx + 1
-            while df.loc[next_idx, column] == 0:  # Find the next non-zero value
+            while df.loc[next_idx, column] == 0:
                 next_idx += 1
-                if next_idx >= len(df):  # If we've reached the end of the column
+                if next_idx >= len(df):
                     break
-            if next_idx >= len(df):  # If all remaining values are zero
+            if next_idx >= len(df):
                 continue
             else:
-                # Calculate the difference between the previous non-zero value and the next non-zero value
                 diff = df.loc[next_idx, column] - df.loc[prev_idx, column]
-                # Divide it by the number of zero values plus one (to include the next non-zero value)
                 increment = diff / (next_idx - prev_idx)
-                # Adjust the stop argument to align with the increment
                 interpolated_values = [df.loc[prev_idx, column] + increment * i for i in range(1, next_idx - prev_idx)]
-                # Replace the zero values
                 df.loc[idx:next_idx - 1, column] = interpolated_values
     return df
 
 
-# Read your data
-df = pd.read_csv('data.csv')
-
-# Fill zeros for each column that you want to process
-columns_to_fill = ['FirstObjectDistance_X', 'FirstObjectDistance_Y', 'SecondObjectDistance_X', 'SecondObjectDistance_Y',
-                   'ThirdObjectDistance_X', 'ThirdObjectDistance_Y', 'FourthObjectDistance_X',
-                   'FourthObjectDistance_Y']
-for column in columns_to_fill:
-    # df = fill_zeros(df, column)
-    z_scores = np.abs(stats.zscore(df[column]))
-    # # Identify outliers
-    outliers = z_scores > 3
-    # # Replace outliers with median
-    # df[column][outliers] = df[column].median()
-    # imputer = KNNImputer(n_neighbors=5)
-    # # Apply the imputer
-    # df[column] = imputer.fit_transform(df[column].values.reshape(-1, 1))
-    data = df[column]
-    # Identify zero values
-    mask = data[1] == 0
-
-    # Apply the imputer
-    # imputer = KNNImputer(n_neighbors=5, missing_values=0)
-    # data.loc[mask, column] = imputer.fit_transform(data[column].values.reshape(-1, 1))[mask]
-    df = fill_zeros(df, column)
-    # Update the DataFrame
-    df.update(data)
-
-
 class CommonObject:
     def __init__(self, edge_color, face_color='none'):
-        self.edge_color = edge_color  # ex.: "g", "black"
-        self.face_color = face_color  # ex.: "g", "black"
+        self.edge_color = edge_color
+        self.face_color = face_color
         self.pos = (0, 0)
         self.pos_history = []
         self.draw_dimensions = OBJ_DIMENSIONS
@@ -103,7 +69,7 @@ class CommonObject:
 class DetectedObject(CommonObject):
     def __init__(self, column_name, car_object, edge_color, face_color='none'):
         super().__init__(edge_color, face_color)
-        self.column_name = column_name  # ex.: "ThirdObject"
+        self.column_name = column_name
         self.car_object = car_object
         self.draw_dimensions = OBJ_DIMENSIONS
 
@@ -126,7 +92,7 @@ class Car(CommonObject):
         self.draw_dimensions = CAR_DIMENSIONS
 
     def update(self, frame, delta_time):
-        self.speed = df["VehicleSpeed"].iloc[frame] / 256  # Convert to m/s
+        self.speed = df["VehicleSpeed"].iloc[frame] / 256
         self.yaw_rate = df["YawRate"].iloc[frame] * (180 / math.pi)
 
         heading_angle = self.yaw_rate * delta_time
@@ -154,15 +120,25 @@ def update(frame):
     car.predict(5, 5, 5)
     car.draw_predicted()
 
-    for detectedObject in detectedObjects:
+    collision_detected = False
+
+    for detectedObject in detected_objects:
         detectedObject.update(frame)
         detectedObject.draw()
         detectedObject.predict(5, 5, 5)
         detectedObject.draw_predicted()
 
+        if check_collision(car, detectedObject):
+            collision_detected = True
+            break
+
     ax.set_xlim(-50, 50)
     ax.set_ylim(-10, 100)
     ax.set_aspect('equal')
+
+    if collision_detected:
+        print("Collision Detected!!!")
+        plt.close()
 
 
 def draw_object(position, draw_dimensions, edge_color, face_color='none'):
@@ -173,24 +149,44 @@ def draw_object(position, draw_dimensions, edge_color, face_color='none'):
     ax.add_patch(obj_rect)
 
 
+def check_collision(car, detectedObject):
+    car_x, car_y = car.pos
+    object_x, object_y = detectedObject.pos
+    car_width, car_height = CAR_DIMENSIONS
+    object_width, object_height = OBJ_DIMENSIONS
+
+    if car_x < 1 or car_y < 1 or object_x < 1 or object_y < 1:
+        return False
+    if (car_x + car_width / 2 < object_x - object_width / 2 or
+            car_x - car_width / 2 > object_x + object_width / 2 or
+            car_y + car_height / 2 < object_y - object_height / 2 or
+            car_y - car_height / 2 > object_y + object_height / 2):
+        return False
+
+    return True
+
+
 def on_close(event):
     sys.exit(0)
 
 
-lineCount = df.shape[0]
-previous_timestamp = df['Timestamp'].iloc[0]
+if __name__ == "__main__":
+    df = pd.read_csv('data.csv')
+    line_count = df.shape[0]
 
-car = Car('black', 'red')
-detectedObjects = [
-    DetectedObject("FirstObject", car, "green", "green"),
-    DetectedObject("SecondObject", car, "yellow", "yellow"),
-    DetectedObject("ThirdObject", car, "blue", "blue"),
-    DetectedObject("FourthObject", car, "magenta", "magenta")
-]
+    previous_timestamp = df['Timestamp'].iloc[0]
 
-fig, ax = plt.subplots(figsize=(10, 10))
-ani = FuncAnimation(fig, update, frames=lineCount, interval=2)
+    car = Car('black', 'red')
+    detected_objects = [
+        DetectedObject("FirstObject", car, "green", "green"),
+        DetectedObject("SecondObject", car, "yellow", "yellow"),
+        DetectedObject("ThirdObject", car, "blue", "blue"),
+        DetectedObject("FourthObject", car, "magenta", "magenta")
+    ]
 
-fig.canvas.mpl_connect('close_event', on_close)
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ani = FuncAnimation(fig, update, frames=line_count, interval=2)
 
-plt.show()
+    fig.canvas.mpl_connect('close_event', on_close)
+
+    plt.show()
